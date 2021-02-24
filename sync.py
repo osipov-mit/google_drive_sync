@@ -114,10 +114,6 @@ def get_changes(drive_service, folder_name, drive_folder_id, os_folder_path):
         if value not in os_folders:
             change['removed_folders'].append((key, value))
 
-    # for item in sorted(change['added_folders'], reverse=True):
-    #     if '/'.join(item.split('/')[:-1]) in change['added_folders']:
-    #         change['added_folders'].remove(item)
-
     return change
 
 
