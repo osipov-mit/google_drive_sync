@@ -1,7 +1,8 @@
 from googleapiclient.http import MediaFileUpload
-
 import os
 from mimetypes import MimeTypes
+
+import data
 
 
 def upload_file(drive_service, path_to_file, parent_id):
@@ -24,11 +25,10 @@ def upload_file(drive_service, path_to_file, parent_id):
 
 def upload_folder(drive_service, folder_path, parent_id=None):
     path = os.path.abspath(folder_path)
-
+    tree = {}
     if parent_id:
-        tree = {path.split('/')[-2]: parent_id}
-    else:
-        tree = {}
+        tree[path.split('/')[-2]] = parent_id
+
     for root, dirs, files in os.walk(path):
         folder = root.split('/')[-1]
         folder_parent = root.split('/')[-2]
@@ -45,11 +45,12 @@ def upload_folder(drive_service, folder_path, parent_id=None):
 
         created_folder = drive_service.files().create(
             body=folder_metadata,
-            fields='id'
+            fields='id, parents'
         ).execute()
 
         folder_id = created_folder.get('id', None)
         tree[folder] = folder_id
+        data.add_folder(path_to_folder=root, folder_id=folder_id)
 
         for file in files:
             file_metadata = {

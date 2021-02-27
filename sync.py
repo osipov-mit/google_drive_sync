@@ -1,58 +1,14 @@
 import hashlib
 import os
 import logging
-from upload import upload_folder, upload_file
 from googleapiclient.http import MediaFileUpload
+
+from upload import upload_folder, upload_file
+from drive_info import get_drive_folder_tree, get_files_in_drive_folder
+import data
 
 logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 logging.basicConfig(level=logging.INFO, format='%(funcName)s : %(levelname)s : %(message)s')
-
-
-def get_drive_folder_by_name_and_parent(drive_service, name, parent_id):
-    query = f"name = '{name}' and " \
-            f"mimeType = 'application/vnd.google-apps.folder'" \
-            f" and '{parent_id}' in parents"
-
-    folders = drive_service.files().list(
-        q=query,
-        fields='files(id, name)'
-    ).execute().get('files')
-    if len(folders) > 0:
-        fol_id = folders[0].get('id')
-        return fol_id
-    else:
-        raise FileNotFoundError(f'File with name: {name} and parent_id: {parent_id} doesn\'t exist')
-
-
-def get_folder_id(drive_service, folder_name, parents: str = None):
-    if parents:
-        parents_folders = parents.strip('/').split('/')
-        parent_id = get_folder_id(drive_service, parents_folders[0])
-        for item in parents.split('/')[1:]:
-            try:
-                parent_id = get_drive_folder_by_name_and_parent(drive_service, item, parent_id)
-            except FileNotFoundError as ex:
-                logging.error(ex)
-                return None
-        try:
-            folder_id = get_drive_folder_by_name_and_parent(drive_service, folder_name, parent_id)
-            return folder_id
-        except FileNotFoundError as ex:
-            logging.error(ex)
-            return None
-    else:
-        folders = drive_service.files().list(
-            q=f"name = '{folder_name}' and"
-              f"mimeType = 'application/vnd.google-apps.folder'",
-            fields='files(id, parents, name)'
-        ).execute()
-        for item in folders.get('files'):
-            item_parent = drive_service.files().get(
-                fileId=item['parents'][0],
-                fields='parents'
-            ).execute()
-            if 'parents' not in item_parent:
-                return item.get('id')
 
 
 def get_files_in_os_folder(folder_path):
@@ -62,28 +18,6 @@ def get_files_in_os_folder(folder_path):
         if os.path.isfile(f'{path}/{f}'):
             result.append(f)
     return result
-
-
-def get_files_in_drive_folder(drive_service, folder_id):
-    files = drive_service.files().list(
-        q=f"'{folder_id}' in parents and"
-          f"mimeType!='application/vnd.google-apps.folder'",
-        fields='files(id, name, mimeType, modifiedTime, md5Checksum)'
-    ).execute()
-    return files.get('files')
-
-
-def get_drive_folder_tree(drive_service, folder_name, folder_id, parents=None):
-    result_tree = {folder_id: f'{parents}/{folder_name}' if parents else folder_name, }
-    children_folders = drive_service.files().list(
-        q=f"'{folder_id}' in parents and "
-          f"mimeType = 'application/vnd.google-apps.folder'"
-    ).execute().get('files')
-    for item in children_folders:
-        item_id = item.get('id')
-        item_name = item.get('name')
-        result_tree.update(get_drive_folder_tree(drive_service, item_name, item_id, result_tree[folder_id]))
-    return result_tree
 
 
 def get_os_folder_tree(folder_path):
@@ -99,6 +33,9 @@ def get_os_folder_tree(folder_path):
 
 
 def get_changes(drive_service, folder_name, drive_folder_id, os_folder_path):
+    logging.info(f'\nos_folder: {os_folder_path}'
+                 f'\nfolder_id: {drive_folder_id}'
+                 f'\nfolder_name: {folder_name}')
     drive_folders = get_drive_folder_tree(drive_service, folder_name, folder_id=drive_folder_id)
     os_folders = get_os_folder_tree(os_folder_path)
     change = {
@@ -120,8 +57,11 @@ def get_changes(drive_service, folder_name, drive_folder_id, os_folder_path):
 def upload_new_folders(drive_service, added_folders, root_path):
     path = os.path.abspath(root_path)
     for item in added_folders:
-        parent_id = get_folder_id(drive_service, item.split('/')[-2], '/'.join(item.split('/')[:-2]))
-        folder_path = os.path.join(path, '/'.join(item.split('/')[1:]))  # path + '/' + '/'.join(item.split('/')[1:])
+        # parent_id = get_folder_id(drive_service, item.split('/')[-2], '/'.join(item.split('/')[:-2]))
+        folder_path = os.path.join(path, '/'.join(item.split('/')[1:]))
+        parent_id = data.get_folder(
+            os.path.join(path, '/'.join(item.split('/')[1:-1]))
+        )
         logging.info(f'\n\t{"upload folder:":>15} {item} '
                      f'\n\t{"by path:":>15} {folder_path}, '
                      f'\n\t{"with parent:":>15} {parent_id}')
@@ -168,10 +108,10 @@ def refresh_folder(drive_service, folder_path):
     root_path = '/'.join(os.path.abspath(folder_path).split('/')[:-1])
     folder = folder_path.split('/')[-1]
     drive_tree = get_drive_folder_tree(drive_service, folder_name=folder,
-                                       folder_id=get_folder_id(drive_service, folder_name=folder))
-    for id, folder_path in drive_tree.items():
-        logging.info(f'Refresh {folder_path}')
-        refresh_files(drive_service, os.path.join(root_path, folder_path), id)
+                                       folder_id=data.get_folder(folder_path))
+    for id, drive_folder_path in drive_tree.items():
+        logging.info(f'Refresh {drive_folder_path}')
+        refresh_files(drive_service, os.path.join(root_path, drive_folder_path), id)
 
 
 def remove_folders(drive_service, removed_folders):
@@ -185,7 +125,8 @@ def remove_folders(drive_service, removed_folders):
 def sync(drive_service, path):
     path = os.path.abspath(path)
     folder_name = path.split('/')[-1]
-    folder_id = get_folder_id(drive_service, folder_name)
+    folder_id = data.get_folder(path)
+    logging.info(folder_id)
     change = get_changes(drive_service, folder_name, folder_id, path)
     remove_folders(drive_service, change['removed_folders'])
     refresh_folder(drive_service, path)

@@ -49,5 +49,3 @@ def get_drive_service():
     credentials = get_credentials()
     drive_service = build('drive', 'v3', credentials=credentials)
     return drive_service
-
-# service = get_drive_service(get_credentials())
