@@ -1,6 +1,5 @@
 import os
-import pickle
-from pprint import pprint as pp
+import json
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(funcName)s : %(levelname)s : %(message)s')
@@ -28,8 +27,8 @@ def is_root(func):
 
 @is_root
 def add_folder(path_to_folder, folder_id):
-    if os.path.exists('folders.pickle'):
-        data = pickle.load(open('folders.pickle', 'rb'))
+    if os.path.exists('folders.json'):
+        data = json.load(open('folders.json', 'r'))
         if path_to_folder not in data.keys():
             data[path_to_folder] = folder_id
         else:
@@ -39,24 +38,34 @@ def add_folder(path_to_folder, folder_id):
                 data[path_to_folder] = folder_id
             else:
                 return None
-        pickle.dump(data, open('folders.pickle', 'wb'))
+        json.dump(data, open('folders.json', 'w'))
     else:
         data = {
             path_to_folder: folder_id
         }
-        pickle.dump(data, open('folders.pickle', 'wb'))
+        json.dump(data, open('folders.json', 'w'))
 
 
 @is_root
 def get_folder(path_to_folder):
-    if os.path.exists('folders.pickle'):
-        data = pickle.load(open('folders.pickle', 'rb'))
+    if os.path.exists('folders.json'):
+        data = json.load(open('folders.json', 'r'))
         if path_to_folder in data.keys():
             return data[path_to_folder]
         else:
             raise ValueError(f'Folder with the path: "{path_to_folder}" does not exist in the added folders.')
     else:
-        raise FileExistsError(f'File "folders.pickle" with data about the added folders does not exist')
+        raise FileExistsError(f'File "folders.json" with data about the added folders does not exist')
+
+
+def remove_folder(path_to_folder):
+    if os.path.exists('folders.json'):
+        data = json.load(open('folders.json', 'r'))
+        removed = data.pop(path_to_folder, None)
+        json.dump(data, open('folders.json', 'w'))
+        return removed
+    else:
+        raise FileExistsError(f'File "folders.json" with data about the added folders does not exist')
 
 
 def add_root(root_id):
@@ -73,7 +82,5 @@ def get_root():
 
 
 def get_all_folders():
-    folders = pickle.load(open('folders.pickle', 'rb'))
+    folders = json.load(open('folders.json', 'r'))
     return folders
-
-

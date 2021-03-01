@@ -120,6 +120,7 @@ def remove_folders(drive_service, removed_folders):
         drive_service.files().delete(
             fileId=item[0]
         ).execute()
+        data.remove_folder(item[1])
 
 
 def sync(drive_service, path):
